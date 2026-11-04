@@ -8,10 +8,13 @@ def is_action_allowed(action, allowed_folder=None):
 
     allowed = Path(allowed_folder).resolve()
 
-    if Path(action["source"]).is_symlink():
+    source_path = Path(action["source"])
+
+    if source_path.is_symlink():
         return False
 
     source = Path(action["source"]).resolve()
+    
     destination = Path(action["destination"]).resolve()
 
     if not (

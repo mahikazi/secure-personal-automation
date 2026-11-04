@@ -16,10 +16,14 @@ A Python-based personal automation system designed with cybersecurity principles
 - Blocks unauthorized file moves
 - Prevents overwriting existing destination files
 - Records successful and blocked file operations in an audit log
+- Attempts to record general filesystem execution failures
 - Checks for direct source-file symbolic links before resolving paths
+- Validates resolved source and destination paths against an authorized directory
 - Supports configurable file-extension and file-size restrictions
 - Validates configuration settings before using them
-- Includes automated security tests
+- Uses a custom exception for file-operation failures
+- Handles missing files, permission errors, and destination-folder creation failures
+- Includes automated permission and executor security tests
 
 ## How to Run
 
@@ -43,17 +47,21 @@ The duplicate detector compares SHA-256 hashes and reports files with matching c
 
 ## Security Design
 
-The system separates automation workflows, permission checking, configuration management, and file execution into independent components.
+The system separates automation workflows, permission checking, configuration management, file execution, and audit logging into independent components.
 
 The workflow manager selects which automation to run.
 
 File-moving actions must pass a permission check before execution.
 
-The permission system checks whether source and destination paths are within an authorized directory, prevents overwriting existing destination files, and checks for direct source-file symbolic links before resolving paths.
+The permission system checks whether source and destination paths resolve within an authorized directory, prevents overwriting existing destination files, and checks for direct source-file symbolic links before resolving paths.
 
 The permission checker also uses security settings loaded from a JSON configuration file to restrict file extensions and maximum file sizes.
 
 The configured allowed folder is used when no folder is explicitly supplied to the permission checker. Existing callers can still supply an allowed folder directly.
+
+The executor performs an additional permission check after creating the destination directory and before creating the hard link.
+
+File operations use hard-link creation followed by source deletion. This avoids directly overwriting an existing destination but does not provide a fully atomic move.
 
 The duplicate detector is read-only and does not send its results to the file-moving executor.
 
@@ -108,7 +116,7 @@ This allows users to choose which automation to run without modifying the source
 
 ## Version 0.4 — Configurable Security Policies
 
-Version 0.4 introduces configurable security settings that allow file-operation restrictions to be adjusted without directly modifying the permission-checking code.
+Version 0.4 introduced configurable security settings that allow file-operation restrictions to be adjusted without directly modifying the permission-checking code.
 
 ### Configuration File
 
@@ -118,9 +126,9 @@ The current configuration is:
 
 ```json
 {
-    "allowed_folder": "test_files",
-    "allowed_extensions": [".txt", ".pdf", ".jpg", ".png", ".csv"],
-    "max_file_size_mb": 20
+  "allowed_folder": "test_files",
+  "allowed_extensions": [".txt", ".pdf", ".jpg", ".png", ".csv"],
+  "max_file_size_mb": 20
 }
 ```
 
@@ -148,7 +156,7 @@ The loader also reports errors when the configuration file is missing or contain
 
 ### Permission Enforcement
 
-The permission checker now enforces additional restrictions:
+The permission checker enforces additional restrictions:
 
 - Blocks source files whose extensions are not on the configured allowlist
 - Blocks source files exceeding the configured maximum file size
@@ -158,12 +166,12 @@ The allowed-folder configuration is used when the permission checker is called w
 
 ### Security Testing
 
-Version 0.4 adds tests for:
+Version 0.4 added tests for:
 
 - Blocking file operations involving disallowed extensions
 - Blocking file operations involving files larger than the configured limit
 
-These tests extend the existing security test suite.
+These tests extended the original six-test suite to eight permission tests.
 
 ### Configuration Limitations
 
@@ -175,32 +183,113 @@ File-size and filesystem checks may become outdated if a file changes between va
 
 An explicitly supplied allowed-folder argument can still override the configured folder, and the application has not yet been fully updated to enforce the configured folder consistently across every workflow.
 
+## Version 0.5 — Safer File Execution
+
+Version 0.5 improves the file executor's error handling and introduces tests for filesystem failures and partial file operations.
+
+### Custom File-Operation Exception
+
+The `security/exceptions.py` module defines `FileOperationError`, a custom exception used to report failures during file execution.
+
+This allows filesystem errors to be reported through a consistent application-specific exception type.
+
+### Structured Error Handling
+
+The executor uses `try` and `except` blocks to handle filesystem failures.
+
+The updated executor includes handling for:
+
+- Missing source files or required paths
+- Permission-denied errors
+- Existing destination files
+- Destination-folder creation failures
+- General operating-system filesystem errors
+
+Destination-folder creation failures are reported with a specific error message.
+
+Existing destination files remain blocked rather than overwritten.
+
+### Additional Permission Validation
+
+The executor performs an additional permission check after attempting to create the destination directory and before creating the destination hard link.
+
+This can detect some changes between the initial permission check and execution.
+
+However, the additional check does not eliminate time-of-check-to-time-of-use (TOCTOU) race conditions.
+
+### Failed-Action Audit Logging
+
+The executor attempts to record a `FAILED` audit event when a general filesystem error occurs.
+
+If writing that failure record raises an `OSError`, the executor prints a warning and continues raising the original filesystem failure as `FileOperationError`.
+
+Successful and blocked operations continue using the existing audit logging system.
+
+Failure logging is not yet consistent across every exception handler, including missing-file errors, permission-denied errors, and destination-folder creation failures.
+
+### Executor Failure Tests
+
+Version 0.5 introduces `tests/test_executor.py`.
+
+The new tests simulate:
+
+- A filesystem error during hard-link creation
+- A permission error when deleting the source file after creating the destination hard link
+
+The tests use temporary directories and Python's `unittest.mock` module to simulate failures without intentionally modifying important user files.
+
+The source-deletion failure test demonstrates a known partial-move condition: both source and destination paths may remain after the operation fails.
+
+With the original eight permission tests and two new executor tests, the suite contains ten tests when all tests are present.
+
+Run the complete suite with:
+
+```bash
+python3 -m unittest discover -s tests -v
+```
+
+### Remaining Execution Limitations
+
+Version 0.5 improves error reporting but does not make file operations fully atomic or guarantee recovery from partial moves.
+
+Known limitations include:
+
+- A failure after hard-link creation may leave both source and destination paths present
+- Cross-filesystem moves are not supported by the hard-link approach
+- Filesystem paths may change between permission validation and execution
+- Some exception handlers do not yet record `FAILED` audit events
+- Audit logging failures are not handled consistently across every logging call
+- Unexpected execution exceptions may still propagate to callers without a user-friendly message
+
+These limitations require additional security review and testing before production use.
+
 ## Current Limitations
 
-This is an early prototype, not a fully hardened filesystem sandbox.
+SecureFlow remains a cybersecurity-focused prototype, not a fully hardened filesystem sandbox.
 
 Current limitations include:
 
-- More complex symbolic-link attacks
-- Filesystem race conditions between permission checks and execution
-- Execution-time failures and partial file operations
-- Audit logging failures
+- Advanced symbolic-link attacks and filesystem race conditions
+- Partial file operations without automatic rollback
+- Incomplete failure-audit coverage
+- Audit logging failures outside the general filesystem-error handler
+- Cross-filesystem move restrictions
 - Explicit allowed-folder overrides that can bypass the configured folder restriction
 - File-extension checks that do not inspect actual file contents
 - File-size checks that may become outdated before execution
 - Duplicate detection currently examines only the top level of the selected folder
 - Matching SHA-256 hashes are not yet verified with a byte-for-byte comparison
 - Automation workflows are currently operated through a command-line interface
+- Limited integration and adversarial security testing
 
 ## Future Development
 
-Future versions will focus on:
+Planned development milestones include:
 
-- Stronger security controls and safer file execution
-- Consistent enforcement of configured security policies across workflows
-- Workflow previews and user approval before file changes
-- Scheduled automation workflows
-- Expanded automation capabilities
-- A graphical dashboard for managing workflows and viewing activity logs
-- Comprehensive integration testing and security review
-- Final documentation and a version 1.0 release
+- **v0.6 — Workflow Preview and Approval:** Display proposed file changes and require user approval before execution.
+- **v0.7 — Scheduling and Automation:** Support configurable schedules and safer unattended workflow execution.
+- **v0.8 — Dashboard and Monitoring:** Build a graphical Python dashboard for managing workflows, reviewing previews, approving actions, and viewing audit activity.
+- **v0.9 — Integration and Security Review:** Test workflows together, investigate security edge cases, and address remaining implementation weaknesses.
+- **v1.0 — Final Release and Demo:** Finalize documentation, installation instructions, demonstrations, and release testing.
+
+The long-term goal is a practical personal automation platform that combines useful workflows with transparent security controls, clear audit records, and predictable failure handling.
