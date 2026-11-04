@@ -1,0 +1,6 @@
+{
+    "allowed_folder": "test_files",
+    "allowed_extensions": [".txt", ".pdf", ".jpg", ".png", ".csv"],
+    "max_file_size_mb": 20
+
+}

@@ -131,3 +131,39 @@ class TestPermissions(unittest.TestCase):
             result = is_action_allowed(action, allowed_folder)
 
             self.assertFalse(result)
+
+    def test_blocks_disallowed_extension(self):
+        with TemporaryDirectory() as temp_dir:
+            folder = Path(temp_dir)
+
+            source = folder / "unsafe.exe"
+            destination = folder / "moved.exe"
+            source.write_text("Test content")
+
+            action = {
+                "source": source,
+                "destination": destination
+            }
+
+            result = is_action_allowed(action, folder)
+
+            self.assertFalse(result)
+
+    def test_blocks_oversized_file(self):
+        with TemporaryDirectory() as temp_dir:
+            folder = Path(temp_dir)
+
+            source = folder / "large.txt"
+            destination = folder / "moved.txt"
+
+            with source.open("wb") as file:
+                file.truncate(21 * 1024 * 1024)
+
+            action = {
+                "source": source,
+                "destination": destination
+            }
+
+            result = is_action_allowed(action, folder)
+
+            self.assertFalse(result)
