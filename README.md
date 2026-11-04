@@ -2,6 +2,8 @@
 
 A Python-based personal automation system designed with cybersecurity principles.
 
+SecureFlow combines useful file automation workflows with permission validation, configurable security policies, filesystem error handling, and audit logging.
+
 ## Features
 
 ### Automation Workflows
@@ -12,17 +14,19 @@ A Python-based personal automation system designed with cybersecurity principles
 
 ### Security Features
 
-- Checks permissions before executing file operations
-- Blocks unauthorized file moves
+- Validates permissions before executing file operations
+- Blocks unauthorized file moves and path traversal attempts
 - Prevents overwriting existing destination files
-- Records successful and blocked file operations in an audit log
-- Attempts to record general filesystem execution failures
-- Checks for direct source-file symbolic links before resolving paths
-- Validates resolved source and destination paths against an authorized directory
-- Supports configurable file-extension and file-size restrictions
-- Validates configuration settings before using them
-- Uses a custom exception for file-operation failures
+- Rejects direct symbolic-link sources and symbolic-link destinations
+- Validates resolved paths against an authorized directory
+- Enforces configurable file-extension and file-size restrictions
+- Validates JSON configuration settings
+- Rechecks permissions immediately before file execution
+- Uses a custom exception for filesystem operation failures
 - Handles missing files, permission errors, and destination-folder creation failures
+- Detects and reports unsupported cross-filesystem moves
+- Attempts to audit successful, blocked, and failed file operations
+- Handles audit-log write failures without hiding the original filesystem error
 - Includes automated permission and executor security tests
 
 ## How to Run
@@ -59,7 +63,7 @@ The permission checker also uses security settings loaded from a JSON configurat
 
 The configured allowed folder is used when no folder is explicitly supplied to the permission checker. Existing callers can still supply an allowed folder directly.
 
-The executor performs an additional permission check after creating the destination directory and before creating the hard link.
+The executor performs an additional permission check after creating the destination directory and before creating the destination hard link.
 
 File operations use hard-link creation followed by source deletion. This avoids directly overwriting an existing destination but does not provide a fully atomic move.
 
@@ -175,91 +179,155 @@ These tests extended the original six-test suite to eight permission tests.
 
 ### Configuration Limitations
 
-The current configuration system provides basic security controls but is not a complete policy-enforcement framework.
+The configuration system provides basic security controls but is not a complete policy-enforcement framework.
 
 File-extension restrictions check filenames rather than actual file contents.
 
 File-size and filesystem checks may become outdated if a file changes between validation and execution.
 
-An explicitly supplied allowed-folder argument can still override the configured folder, and the application has not yet been fully updated to enforce the configured folder consistently across every workflow.
+An explicitly supplied allowed-folder argument can still override the configured folder, and the application does not yet consistently enforce the configured folder across every workflow.
 
 ## Version 0.5 — Safer File Execution
 
-Version 0.5 improves the file executor's error handling and introduces tests for filesystem failures and partial file operations.
+Version 0.5 provides structured filesystem error handling, additional permission validation, improved audit logging, and automated tests for execution failures.
 
 ### Custom File-Operation Exception
 
 The `security/exceptions.py` module defines `FileOperationError`, a custom exception used to report failures during file execution.
 
-This allows filesystem errors to be reported through a consistent application-specific exception type.
+This provides a consistent application-specific exception type for supported filesystem failures.
 
 ### Structured Error Handling
 
 The executor uses `try` and `except` blocks to handle filesystem failures.
 
-The updated executor includes handling for:
+Supported error handling includes:
 
-- Missing source files or required paths
-- Permission-denied errors
-- Existing destination files
-- Destination-folder creation failures
-- General operating-system filesystem errors
+- **Missing files:** Reports missing source files or required filesystem paths.
+- **Permission-denied errors:** Reports filesystem permission failures.
+- **Existing destinations:** Blocks operations that would overwrite an existing destination.
+- **Destination-folder creation failures:** Reports errors encountered while preparing destination directories.
+- **General filesystem errors:** Converts operating-system errors into `FileOperationError`.
+- **Cross-filesystem moves:** Detects `errno.EXDEV` and reports that cross-filesystem moves are unsupported.
 
-Destination-folder creation failures are reported with a specific error message.
-
-Existing destination files remain blocked rather than overwritten.
+Existing destination files are blocked rather than overwritten.
 
 ### Additional Permission Validation
 
-The executor performs an additional permission check after attempting to create the destination directory and before creating the destination hard link.
+The executor performs two permission checks:
 
-This can detect some changes between the initial permission check and execution.
+1. Before beginning the file operation.
+2. After creating the destination directory and before creating the destination hard link.
 
-However, the additional check does not eliminate time-of-check-to-time-of-use (TOCTOU) race conditions.
+The second check can detect some changes to file paths or permissions between initial validation and execution.
 
-### Failed-Action Audit Logging
+However, repeated validation does not eliminate time-of-check-to-time-of-use (TOCTOU) race conditions.
 
-The executor attempts to record a `FAILED` audit event when a general filesystem error occurs.
+### Hard-Link-Based File Execution
 
-If writing that failure record raises an `OSError`, the executor prints a warning and continues raising the original filesystem failure as `FileOperationError`.
+File moves use the following sequence:
 
-Successful and blocked operations continue using the existing audit logging system.
+1. Validate the requested action.
+2. Prepare the destination directory.
+3. Revalidate the requested action.
+4. Create a hard link at the destination.
+5. Delete the original source path.
+6. Record the operation result in the audit log.
 
-Failure logging is not yet consistent across every exception handler, including missing-file errors, permission-denied errors, and destination-folder creation failures.
+Hard-link creation avoids directly overwriting an existing destination.
 
-### Executor Failure Tests
+However, the overall move is not atomic.
 
-Version 0.5 introduces `tests/test_executor.py`.
+If source deletion fails after hard-link creation, both source and destination paths may remain.
 
-The new tests simulate:
+The executor does not automatically roll back these partial operations.
 
-- A filesystem error during hard-link creation
-- A permission error when deleting the source file after creating the destination hard link
+Hard links also cannot be created across different filesystems, so cross-filesystem moves are explicitly unsupported.
+
+### Audit Logging
+
+The executor records operation outcomes using the audit logger in `security/audit_logger.py`.
+
+Audit statuses include:
+
+- **SUCCESS:** The file operation completed.
+- **BLOCKED:** The requested action was rejected.
+- **FAILED:** A supported filesystem error prevented completion.
+
+The executor attempts to record `FAILED` events for:
+
+- Missing-file errors
+- Permission-denied errors
+- Destination-folder creation failures
+- General filesystem errors, including unsupported cross-filesystem moves
+
+Blocked actions are also logged, including actions rejected during permission validation and attempts to use an existing destination.
+
+### Audit Logging Error Handling
+
+Audit logging is handled separately from the underlying filesystem operation.
+
+If writing a `FAILED` event raises an `OSError`, the executor prints a warning and preserves the original filesystem failure as `FileOperationError`.
+
+If writing a `BLOCKED` event raises an `OSError`, the executor prints a warning and still returns `False`.
+
+If a move succeeds but writing its `SUCCESS` event fails, the executor prints a warning and still returns `True`.
+
+This distinction prevents an audit-log write failure from incorrectly changing the reported outcome of the file operation.
+
+**Security limitation:** Audit records are best-effort. A file operation may complete or be blocked without a successfully written audit record. The current implementation does not provide guaranteed or tamper-resistant audit logging.
+
+### Executor Security Tests
+
+Version 0.5 includes `tests/test_executor.py`.
+
+The executor tests cover:
+
+1. **Filesystem failure:** Simulates a disk error during hard-link creation and verifies that `FileOperationError` is raised.
+2. **Source deletion failure:** Simulates a permission error when deleting the original source after hard-link creation and verifies that both paths remain.
+3. **Audit logging failure:** Simulates simultaneous filesystem and audit-log errors and verifies that the original filesystem error is preserved.
 
 The tests use temporary directories and Python's `unittest.mock` module to simulate failures without intentionally modifying important user files.
 
-The source-deletion failure test demonstrates a known partial-move condition: both source and destination paths may remain after the operation fails.
+### Complete Test Suite
 
-With the original eight permission tests and two new executor tests, the suite contains ten tests when all tests are present.
+The test suite contains:
 
-Run the complete suite with:
+| Test category | Number of tests |
+|---|---:|
+| Permission security tests | 8 |
+| Executor failure tests | 3 |
+| **Total** | **11** |
+
+Run the complete suite from the project directory:
 
 ```bash
 python3 -m unittest discover -s tests -v
 ```
 
+The expected successful result is:
+
+```text
+Ran 11 tests
+
+OK
+```
+
 ### Remaining Execution Limitations
 
-Version 0.5 improves error reporting but does not make file operations fully atomic or guarantee recovery from partial moves.
+Version 0.5 improves file-execution security and error handling but does not make file operations fully atomic or guarantee recovery from partial moves.
 
 Known limitations include:
 
-- A failure after hard-link creation may leave both source and destination paths present
-- Cross-filesystem moves are not supported by the hard-link approach
-- Filesystem paths may change between permission validation and execution
-- Some exception handlers do not yet record `FAILED` audit events
-- Audit logging failures are not handled consistently across every logging call
-- Unexpected execution exceptions may still propagate to callers without a user-friendly message
+- A failure after hard-link creation may leave both source and destination paths present.
+- Automatic rollback of partial moves is not implemented.
+- Cross-filesystem moves are not supported.
+- Filesystem paths may change between permission validation and execution.
+- Repeated permission checks do not eliminate TOCTOU vulnerabilities.
+- Audit logging is best-effort and may fail without preventing an operation.
+- Audit records are not tamper-resistant.
+- Unexpected exceptions outside the supported filesystem error handlers may still propagate to callers.
+- File operations do not yet require interactive preview and approval.
 
 These limitations require additional security review and testing before production use.
 
@@ -271,8 +339,7 @@ Current limitations include:
 
 - Advanced symbolic-link attacks and filesystem race conditions
 - Partial file operations without automatic rollback
-- Incomplete failure-audit coverage
-- Audit logging failures outside the general filesystem-error handler
+- Best-effort rather than guaranteed audit logging
 - Cross-filesystem move restrictions
 - Explicit allowed-folder overrides that can bypass the configured folder restriction
 - File-extension checks that do not inspect actual file contents
@@ -280,6 +347,8 @@ Current limitations include:
 - Duplicate detection currently examines only the top level of the selected folder
 - Matching SHA-256 hashes are not yet verified with a byte-for-byte comparison
 - Automation workflows are currently operated through a command-line interface
+- No interactive preview or approval stage before file execution
+- No scheduling or graphical dashboard
 - Limited integration and adversarial security testing
 
 ## Future Development
