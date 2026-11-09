@@ -1,4 +1,4 @@
-# Secure Personal Automation Platform
+# SecureFlow: Secure Personal Automation
 
 A Python-based personal automation system designed with cybersecurity principles.
 
