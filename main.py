@@ -1,6 +1,5 @@
 from workflows.workflow_manager import run_workflow
-from security.permissions import is_action_allowed
-from security.executor import execute_action
+from security.approval_executor import execute_approved_actions
 
 def main():
     print("Secure Personal Automation Platform")
@@ -49,12 +48,7 @@ def main():
 
         return
 
-    for action in actions:
-        print(f"Proposed move: {action['source']} -> {action['destination']}")
-        allowed = is_action_allowed(action, "test_files")
-        print(f"Permission granted: {allowed}")
-        if allowed:
-            execute_action(action, "test_files")
+    execute_approved_actions(actions, "test_files")
 
 if __name__ == "__main__":
     main()
