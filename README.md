@@ -2,17 +2,18 @@
 
 A Python-based personal automation platform designed with cybersecurity principles.
 
-SecureFlow combines practical file automation workflows with permission validation, configurable security policies, workflow previews, explicit user approval, filesystem error handling, and audit logging.
+SecureFlow combines practical file automation workflows with permission validation, configurable security policies, workflow previews, explicit user approval, filesystem error handling, audit logging, and configurable workflow scheduling.
 
-**Current version:** v0.6 — Workflow Preview and Approval
+**Current version:** v0.7 — Scheduling and Automation
 
 ## Features
 
 ### Automation Workflows
 
 - **File Organizer:** Organizes files into folders based on their extensions.
-- **Old-File Archiver:** Identifies files older than a user-selected number of days and proposes moving them into an archive folder.
+- **Old-File Archiver:** Identifies files older than a specified number of days and proposes moving them into an archive folder.
 - **Duplicate Detector:** Uses SHA-256 hashing to identify files with matching contents without moving or deleting them.
+- **Workflow Scheduler:** Checks configurable schedules and runs workflows when their intervals have elapsed.
 
 ### Security Features
 
@@ -26,14 +27,16 @@ SecureFlow combines practical file automation workflows with permission validati
 - Previews proposed file operations before execution.
 - Separates permitted actions from blocked actions.
 - Requires explicit user approval before executing permitted file moves.
-- Supports safe cancellation without executing proposed actions.
+- Supports cancellation without executing proposed actions.
 - Rechecks permissions immediately before file execution.
 - Uses a custom exception for filesystem operation failures.
 - Handles missing files, permission errors, and destination-folder creation failures.
 - Detects and reports unsupported cross-filesystem moves.
 - Attempts to audit successful, blocked, failed, and cancelled file operations.
 - Handles audit-log write failures without hiding the original filesystem error.
-- Includes 25 automated security and workflow tests.
+- Validates schedule configurations and prevents premature workflow reruns.
+- Stores scheduling history to track previously processed workflows.
+- Includes **39 automated security, workflow, and scheduling tests**.
 
 ## How to Run
 
@@ -43,11 +46,12 @@ Activate the Python virtual environment, then run:
 python3 main.py
 ```
 
-The program displays three workflow options:
+The program displays four workflow options:
 
 1. Organize files
 2. Archive old files
 3. Detect duplicate files
+4. Run due scheduled workflows
 
 ### File Organizer
 
@@ -70,6 +74,24 @@ The duplicate detector calculates SHA-256 hashes and reports files with matching
 It is read-only and does not automatically delete, overwrite, or move duplicate files.
 
 Duplicate detection does not require file-move approval because it does not execute file-moving actions.
+
+### Scheduled Workflows
+
+Select option `4` to check whether any configured workflows are due.
+
+SecureFlow reads schedule definitions, checks the last recorded processing time, and processes schedules whose intervals have elapsed.
+
+Supported scheduled workflows include:
+
+- File organization
+- Old-file archiving
+- Duplicate detection
+
+Scheduled organizer and archiver workflows still require permission validation, preview, and explicit user approval before moving files.
+
+Scheduled duplicate detection remains read-only.
+
+**Important:** The scheduler does not run continuously in the background. Users must launch SecureFlow and select option `4` to check and process due schedules.
 
 ### Workflow Preview and Approval
 
@@ -107,9 +129,9 @@ Blocked actions: 1
 Approve 1 permitted file action(s)? (y/n):
 ```
 
-Entering `y` or `yes` approves the permitted actions.
+Entering `y` or `yes` approves permitted actions.
 
-Entering `n` or `no` cancels the workflow without executing the proposed file moves.
+Entering `n` or `no` cancels the workflow without executing proposed file moves.
 
 Invalid responses prompt the user to enter a valid answer.
 
@@ -119,7 +141,7 @@ If all proposed actions are blocked, no approval is requested.
 
 ## Security Design
 
-SecureFlow separates automation workflows, permission checking, configuration management, workflow previewing, user approval, file execution, and audit logging into independent components.
+SecureFlow separates automation workflows, permission checking, configuration management, workflow previewing, user approval, file execution, audit logging, and scheduling into independent components.
 
 ### Workflow Management
 
@@ -191,6 +213,21 @@ Audit logging is best-effort.
 If an audit-log write raises an `OSError`, the system reports a warning while preserving the underlying file-operation result.
 
 The audit log is not guaranteed to be complete or tamper-resistant.
+
+### Scheduling Architecture
+
+Scheduling functionality is separated into four modules:
+
+- `scheduler/schedule_config.py` — Loads and validates schedule definitions.
+- `scheduler/schedule_manager.py` — Determines which schedules are due.
+- `scheduler/schedule_history.py` — Loads and saves previously processed schedule timestamps.
+- `scheduler/scheduled_runner.py` — Coordinates due workflow execution and scheduling history updates.
+
+Schedule definitions are stored in `config/schedules.json`.
+
+Scheduling history is stored in `logs/schedule_history.json`.
+
+The scheduler uses timezone-aware UTC timestamps to calculate elapsed intervals.
 
 ## Version 0.2 — Security Testing
 
@@ -384,7 +421,7 @@ By the end of v0.5, the automated suite contained 11 tests:
 
 ## Version 0.6 — Workflow Preview and Approval
 
-Version 0.6 introduces a security checkpoint between workflow planning and file execution.
+Version 0.6 introduced a security checkpoint between workflow planning and file execution.
 
 Users can review proposed file changes and explicitly approve or reject permitted actions before any files are moved.
 
@@ -434,7 +471,7 @@ The controller also handles supported `FileOperationError` exceptions so an exec
 
 ### Command-Line Integration
 
-The main application now routes file-moving workflows through the approval controller.
+The main application routes file-moving workflows through the approval controller.
 
 The organizer and archiver use the preview and approval process.
 
@@ -465,7 +502,7 @@ If no permitted actions remain, the workflow ends without requesting approval.
 
 ### Automated Tests
 
-Version 0.6 adds 14 tests across three new test files.
+Version 0.6 added 14 tests across three new test files.
 
 **`tests/test_preview.py` — 3 tests**
 
@@ -490,36 +527,11 @@ Version 0.6 adds 14 tests across three new test files.
 - Cancelled workflows preserve source files.
 - Approved workflows move files successfully.
 
-### Complete Automated Test Suite
-
-The current test suite contains:
-
-| Test category | Tests |
-|---|---:|
-| Permission security tests | 8 |
-| Executor failure tests | 3 |
-| Workflow preview tests | 3 |
-| User approval tests | 4 |
-| Approval executor tests | 7 |
-| **Total** | **25** |
-
-Run all tests from the project directory:
-
-```bash
-python3 -m unittest discover -s tests -v
-```
-
-The verified successful result for v0.6 is:
-
-```text
-Ran 25 tests
-
-OK
-```
+By the end of v0.6, the test suite contained **25 tests**.
 
 ### Manual Workflow Verification
 
-Version 0.6 was also manually tested through the command-line interface.
+Version 0.6 was manually tested through the command-line interface.
 
 **Organizer cancellation**
 
@@ -569,10 +581,308 @@ Known limitations include:
 - File operations are not fully atomic.
 - Partial moves are not automatically rolled back.
 - Audit logging remains best-effort.
-- The command-line approval process is interactive and does not yet support scheduling or unattended execution.
+- The command-line approval process is interactive.
 - Unexpected input or runtime exceptions may still propagate outside the supported error handlers.
 
 SecureFlow remains a cybersecurity-focused prototype rather than a fully hardened filesystem sandbox.
+
+## Version 0.7 — Scheduling and Automation
+
+Version 0.7 introduces configurable, interval-based scheduling for SecureFlow's existing automation workflows.
+
+The scheduling system allows users to define recurring workflows, track when schedules were last processed, and prevent workflows from running again before their configured intervals expire.
+
+Scheduling is integrated into the existing command-line application.
+
+### Schedule Configuration
+
+Schedules are defined in:
+
+`config/schedules.json`
+
+Example configuration:
+
+```json
+{
+  "schedules": [
+    {
+      "name": "daily_organizer",
+      "workflow": "organize",
+      "interval_minutes": 1440,
+      "enabled": true
+    },
+    {
+      "name": "weekly_archiver",
+      "workflow": "archive",
+      "interval_minutes": 10080,
+      "days_old": 30,
+      "enabled": true
+    }
+  ]
+}
+```
+
+Each schedule includes:
+
+- `name` — A unique, non-empty schedule identifier.
+- `workflow` — One of `organize`, `archive`, or `duplicates`.
+- `interval_minutes` — A positive whole-number interval between scheduled runs.
+- `enabled` — A Boolean value indicating whether the schedule is active.
+- `days_old` — A required positive whole number for archive schedules.
+
+For reference:
+
+- `1440` minutes = 1 day.
+- `10080` minutes = 7 days.
+
+### Schedule Configuration Validation
+
+The `scheduler/schedule_config.py` module provides `load_schedules()`.
+
+It validates:
+
+- The schedule configuration is a JSON object.
+- The `schedules` field contains a list.
+- Every schedule is a JSON object.
+- Schedule names are non-empty strings.
+- Schedule names are unique.
+- Workflow names are supported.
+- Intervals are positive integers.
+- Enabled values are Boolean.
+- Archive schedules include a positive `days_old` value.
+
+Invalid schedule configurations raise a `ValueError`.
+
+### Schedule Manager
+
+The `scheduler/schedule_manager.py` module determines which schedules are due.
+
+It provides:
+
+- `current_time()` — Returns the current UTC time.
+- `is_schedule_due()` — Determines whether an individual schedule is due.
+- `get_due_schedules()` — Filters a collection of schedules to find due workflows.
+
+A schedule is due when:
+
+1. It is enabled.
+2. It has never been processed, or its configured interval has elapsed since its last recorded processing time.
+
+Disabled schedules are skipped.
+
+### Scheduling History
+
+The `scheduler/schedule_history.py` module manages persistent schedule history.
+
+It provides:
+
+- `load_history()` — Reads previously recorded schedule timestamps.
+- `save_history()` — Writes updated timestamps to disk.
+
+History is stored in:
+
+`logs/schedule_history.json`
+
+Timestamps are stored in ISO 8601 format and normalized to UTC.
+
+The history file is created when scheduled workflows are processed.
+
+The runtime history file should be excluded from Git version control because it contains local execution state.
+
+### Scheduled Workflow Runner
+
+The `scheduler/scheduled_runner.py` module coordinates scheduled workflow execution.
+
+It provides:
+
+- `run_scheduled_workflow()` — Runs a configured workflow using the existing workflow manager.
+- `run_due_schedules()` — Loads schedules, checks their history, processes due workflows, and updates timestamps.
+
+The scheduled runner reuses the existing security workflow.
+
+For organizer and archiver schedules:
+
+1. Generate proposed file actions.
+2. Display the workflow preview.
+3. Separate allowed and blocked actions.
+4. Request approval for permitted actions.
+5. Execute approved actions using the secure executor.
+
+For duplicate-detection schedules:
+
+1. Scan for duplicate files.
+2. Display the results.
+3. Do not execute file moves or request file-move approval.
+
+### CLI Integration
+
+Version 0.7 adds a fourth menu option:
+
+```text
+4. Run due scheduled workflows
+```
+
+Selecting this option calls `run_due_schedules()`.
+
+If schedules are due, SecureFlow processes them and reports the number processed.
+
+Example:
+
+```text
+Scheduled workflow: daily_organizer
+
+=== WORKFLOW PREVIEW ===
+Total proposed actions: 1
+
+Action 1
+Source:      test_files/archive_test.txt
+Destination: test_files/txt/archive_test.txt
+Status:      ALLOWED
+
+=== PREVIEW SUMMARY ===
+Allowed actions: 1
+Blocked actions: 0
+
+Approve 1 permitted file action(s)? (y/n): n
+Workflow cancelled. No files were moved.
+
+Scheduled workflow: weekly_archiver
+
+=== WORKFLOW PREVIEW ===
+Total proposed actions: 1
+
+Action 1
+Source:      test_files/archive_test.txt
+Destination: test_files/archive/archive_test.txt
+Status:      BLOCKED
+
+=== PREVIEW SUMMARY ===
+Allowed actions: 0
+Blocked actions: 1
+No permitted actions to execute.
+
+Scheduled workflows processed: 2
+```
+
+If no schedules are due, the program displays:
+
+```text
+No scheduled workflows are due.
+```
+
+### Scheduling and Approval Behavior
+
+A scheduled workflow is recorded as processed after its workflow handler returns, even when:
+
+- The user declines approval.
+- All proposed file actions are blocked.
+- No file moves are completed.
+
+This prevents the same schedule from being immediately retried on the next CLI check.
+
+Therefore, the message `Scheduled workflows processed` indicates how many scheduled workflows were handled, **not** how many completed successful file operations.
+
+Scheduled workflows are not fully unattended because file-moving operations still require interactive user approval.
+
+### Automated Scheduling Tests
+
+Version 0.7 adds **14 tests** across three test files.
+
+**`tests/test_schedule_config.py` — 5 tests**
+
+- Loads valid schedule configurations.
+- Rejects unsupported workflow names.
+- Rejects invalid intervals.
+- Rejects duplicate schedule names.
+- Requires a valid `days_old` value for archive schedules.
+
+**`tests/test_schedule_manager.py` — 5 tests**
+
+- Identifies new schedules as due.
+- Skips disabled schedules.
+- Identifies schedules whose intervals have elapsed.
+- Prevents schedules from running before their intervals expire.
+- Filters due schedules correctly.
+
+**`tests/test_scheduled_runner.py` — 4 tests**
+
+- Runs due scheduled workflows.
+- Routes organizer workflows through the approval controller.
+- Keeps duplicate detection separate from the file executor.
+- Handles cases where no schedules are due.
+
+### Complete Automated Test Suite
+
+The full test suite now contains:
+
+| Test category | Tests |
+|---|---:|
+| Permission security tests | 8 |
+| Executor failure tests | 3 |
+| Workflow preview tests | 3 |
+| User approval tests | 4 |
+| Approval executor tests | 7 |
+| Schedule configuration tests | 5 |
+| Schedule manager tests | 5 |
+| Scheduled runner tests | 4 |
+| **Total** | **39** |
+
+Run the complete test suite:
+
+```bash
+python3 -m unittest discover -s tests -v
+```
+
+Verified result:
+
+```text
+Ran 39 tests in 0.024s
+
+OK
+```
+
+### Manual Scheduling Verification
+
+Version 0.7 was also tested through the command-line interface.
+
+**First scheduler run**
+
+- The daily organizer schedule was due.
+- One permitted file move appeared in the preview.
+- The user declined approval.
+- No files were moved.
+- The weekly archiver schedule was also due.
+- One archive action was blocked because the destination already existed.
+- The blocked action was not executed.
+- The scheduler reported two processed workflows.
+
+**Second scheduler run**
+
+The user immediately selected option `4` again.
+
+SecureFlow displayed:
+
+```text
+No scheduled workflows are due.
+```
+
+This confirmed that scheduling history persisted between application runs and prevented premature workflow reruns.
+
+### Scheduling Limitations
+
+The v0.7 scheduler has the following limitations:
+
+- Scheduling checks are manually triggered through the CLI.
+- There is no always-running background scheduler or operating-system job integration.
+- Scheduled file moves still require explicit user approval.
+- A cancelled or blocked workflow is recorded as processed.
+- Schedule history records processing timestamps rather than detailed success or failure results.
+- If a workflow raises an unhandled exception before its history is saved, it may remain due.
+- The history file does not provide locking for concurrent scheduler processes.
+- Schedule configuration and history files are not tamper-resistant.
+- Existing filesystem and audit-logging limitations still apply.
+
+The scheduling system provides controlled interval-based automation rather than fully unattended background execution.
 
 ## Current Limitations
 
@@ -589,7 +899,10 @@ The platform currently has the following limitations:
 - Duplicate detection examines only the top level of the selected folder.
 - Matching SHA-256 hashes are not verified with a byte-for-byte comparison.
 - Preview and approval are currently provided through the command-line interface.
-- There is no scheduling system or graphical dashboard yet.
+- Scheduling requires manually selecting the scheduler option.
+- Scheduled file moves require interactive approval.
+- Schedule history does not record detailed workflow outcomes.
+- There is no graphical dashboard yet.
 - Integration and adversarial security testing remain limited.
 
 These limitations require further review before production use.
@@ -598,7 +911,6 @@ These limitations require further review before production use.
 
 Planned development milestones include:
 
-- **v0.7 — Scheduling and Automation:** Support configurable schedules and safer unattended workflow execution.
 - **v0.8 — Dashboard and Monitoring:** Build a graphical Python dashboard for managing workflows, reviewing previews, approving actions, and viewing audit activity.
 - **v0.9 — Integration and Security Review:** Test workflows together, investigate security edge cases, and address remaining implementation weaknesses.
 - **v1.0 — Final Release and Demo:** Finalize documentation, installation instructions, demonstrations, and release testing.
