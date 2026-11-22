@@ -1,3 +1,4 @@
+from scheduler.scheduled_runner import run_due_schedules
 from workflows.workflow_manager import run_workflow
 from security.approval_executor import execute_approved_actions
 
@@ -9,8 +10,9 @@ def main():
     print("1. Organize files")
     print("2. Archive old files")
     print("3. Detect duplicate files")
+    print("4. Run due scheduled workflows")
 
-    choice = input("Choose a workflow (1, 2, or 3): ")
+    choice = input("Choose a workflow (1, 2, 3, or 4): ")
 
     if choice == "1":
         workflow_name = "organize"
@@ -28,6 +30,10 @@ def main():
 
     elif choice == "3":
         workflow_name = "duplicates"
+
+    elif choice == "4":
+        run_due_schedules()
+        return
 
     else:
         print("Invalid choice")

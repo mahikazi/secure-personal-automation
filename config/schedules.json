@@ -1,0 +1,17 @@
+{
+    "schedules": [
+        {
+            "name": "daily_organizer",
+            "workflow": "organize",
+            "interval_minutes": 1440,
+            "enabled": true
+        },
+        {
+            "name": "weekly_archiver",
+            "workflow": "archive",
+            "interval_minutes": 10080,
+            "days_old": 30,
+            "enabled": true
+        }
+    ]
+}
