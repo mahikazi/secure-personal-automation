@@ -5,80 +5,53 @@ from security.permissions import is_action_allowed
 from security.audit_logger import log_action
 from security.exceptions import FileOperationError
 
+
+def record_status(action, status):
+    try:
+        log_action(action, status)
+    except OSError as error:
+        print(f"WARNING: Could not write audit log: {error}")
+
+
 def execute_action(action, allowed_folder):
     if not is_action_allowed(action, allowed_folder):
         print("BLOCKED: Action is not permitted.")
-
-        try:
-            log_action(action, "BLOCKED")
-        except OSError as log_error:
-            print(f"WARNING: Could not write audit log: {log_error}")
-        
+        record_status(action, "BLOCKED")
         return False
 
     source = Path(action["source"])
     destination = Path(action["destination"])
 
     try:
-        try:
-            destination.parent.mkdir(parents=True, exist_ok=True)
-
-        except OSError as error:
-            try:
-                log_action(action, "FAILED")
-            except OSError as log_error:
-                print(f"WARNING: Could not write audit log: {log_error}")
-
-            raise FileOperationError(
-                f"Could not create destination folder: {error}"
-            ) from error
+        destination.parent.mkdir(parents=True, exist_ok=True)
 
         if not is_action_allowed(action, allowed_folder):
-            try:
-                log_action(action, "BLOCKED")
-            except OSError as log_error:
-                print(f"WARNING: Could not write audit log: {log_error}")
-        
+            record_status(action, "BLOCKED")
             return False
-        
+
         destination.hardlink_to(source)
-        source.unlink()
 
     except FileExistsError:
         print(f"BLOCKED: Destination already exists: {destination}")
-
-        try:
-            log_action(action, "BLOCKED")
-        except OSError as log_error:
-            print(f"WARNING: Could not write audit log: {log_error}")
-        
+        record_status(action, "BLOCKED")
         return False
 
     except FileNotFoundError as error:
-        try:
-            log_action(action, "FAILED")
-        except OSError as log_error:
-            print(f"WARNING: Could not write audit log: {log_error}")
-        
+        record_status(action, "FAILED")
+
         raise FileOperationError(
             f"Source file or required path is missing: {error}"
         ) from error
 
     except PermissionError as error:
-        try:
-            log_action(action, "FAILED")
-        except OSError as log_error:
-            print(f"WARNING: Could not write audit log: {log_error}")
+        record_status(action, "FAILED")
 
         raise FileOperationError(
             f"Permission denied during file operation: {error}"
         ) from error
 
     except OSError as error:
-        try:
-            log_action(action, "FAILED")
-        except OSError as log_error:
-            print(f"WARNING: Could not write audit log: {log_error}")
+        record_status(action, "FAILED")
 
         if error.errno == errno.EXDEV:
             raise FileOperationError(
@@ -89,11 +62,19 @@ def execute_action(action, allowed_folder):
             f"File operation failed: {error}"
         ) from error
 
-    print(f"MOVED: {source} -> {destination}")
-
     try:
-        log_action(action, "SUCCESS")
-    except OSError as log_error:
-        print(f"WARNING: Move succeeded, but audit logging failed: {log_error}")
-    
+        source.unlink()
+
+    except OSError as error:
+        record_status(action, "FAILED")
+
+        raise FileOperationError(
+            f"Destination link created, but source removal failed. "
+            f"Both paths may remain: {source} and {destination}. "
+            f"Original error: {error}"
+        ) from error
+
+    print(f"MOVED: {source} -> {destination}")
+    record_status(action, "SUCCESS")
+
     return True

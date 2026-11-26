@@ -1,85 +1,66 @@
 # SecureFlow — Secure Personal Automation
 
-SecureFlow is a Python-based file automation project built with a focus on cybersecurity and controlled file operations.
+SecureFlow is a Python-based file automation platform built with a focus on cybersecurity, filesystem safety, and user control.
 
-The goal is to automate common file management tasks without giving the program unrestricted access to the filesystem. Instead of moving files immediately, SecureFlow checks whether each action is allowed, displays the proposed changes, and asks for approval before executing them.
+I started this project to explore how everyday automation can be implemented without giving a program unrestricted access to the filesystem. Rather than executing file operations immediately, SecureFlow validates proposed actions, previews changes, and requires user approval before moving files.
 
-The project currently supports file organization, old-file archiving, duplicate detection, interval-based workflow scheduling, and a graphical dashboard for managing and monitoring automation.
-
-**Current Version:** v0.8 — Dashboard and Monitoring
+**Current Version:** v0.9 — Integration Testing and Security Review
 
 ## Features
 
-### File Organization
+- **File organization:** Sorts files into folders based on their extensions.
+- **File archiving:** Identifies and archives files based on their last modified date.
+- **Duplicate detection:** Uses SHA-256 hashing to identify duplicate files without modifying or deleting them.
+- **Workflow approval:** Previews permitted and blocked actions before execution.
+- **Scheduling:** Supports configurable workflow intervals and tracks previous processing times.
+- **Audit logging:** Records successful, blocked, failed, and cancelled operations.
+- **Graphical dashboard:** Provides an interactive interface for managing workflows and monitoring activity.
 
-The file organizer sorts files into folders based on their extensions.
+## Dashboard
 
-For example, a `.txt` file can be moved into a `txt` folder inside the authorized directory.
+The dashboard is built with CustomTkinter and features a monochromatic dark interface.
 
-Before moving anything, SecureFlow checks the proposed source and destination paths against its security rules. Permitted actions are shown in a preview and require user approval.
+It includes five sections:
 
-### File Archiving
+- **Overview:** Automation activity, pending schedules, and quick actions.
+- **Workflows:** Workflow selection, previews, approval, and cancellation.
+- **Schedules:** Configured workflows, due status, and scheduling history.
+- **Activity:** Searchable audit logs with status filtering.
+- **Settings:** Current workspace and security configuration.
 
-The archiver identifies files that have not been modified within a specified number of days.
+Both the dashboard and command-line interface use the same underlying security and automation components.
 
-Users can enter an age threshold through the command-line menu or graphical dashboard, and SecureFlow generates proposed moves into an archive folder.
+## Security Design
 
-Existing destination files are protected from being overwritten, and only approved actions are executed.
+Security is a central part of SecureFlow rather than an additional feature.
 
-### Duplicate Detection
+The platform implements:
 
-The duplicate detector uses SHA-256 hashing to identify files with matching contents.
+- Authorized workspace restrictions and path traversal prevention
+- Symbolic-link validation
+- Configurable file extension and size restrictions
+- Destination overwrite prevention
+- Permission revalidation before execution
+- Explicit user approval for file-moving operations
+- Audit log sanitization to prevent newline-based log injection
+- Partial-move failure detection and reporting
+- Atomic replacement of scheduling history files
 
-It reports the original and duplicate file paths without deleting, overwriting, or moving either file.
+File moves use hard-link creation followed by source removal to avoid overwriting existing destination files.
 
-This workflow is read-only and does not require file-move approval.
+The security layer is separated from workflow generation, allowing automation logic to propose actions without directly executing them.
 
-### Workflow Preview and Approval
+## Tech Stack
 
-Before executing file-moving workflows, SecureFlow displays:
-
-- The source file path
-- The proposed destination path
-- Whether the action is `ALLOWED` or `BLOCKED`
-- The total number of permitted and blocked actions
-
-Only permitted actions can be approved. Blocked actions are excluded from execution.
-
-Through the command-line interface, users can enter `y` or `yes` to approve a workflow, or `n` or `no` to cancel it.
-
-The graphical dashboard provides interactive approval and cancellation controls.
-
-If approval is declined, the proposed file moves are not executed.
-
-### Workflow Scheduling
-
-Version 0.7 introduced configurable scheduling for the organizer, archiver, and duplicate detector.
-
-Schedules are defined in a JSON file and use time intervals to determine when workflows should run.
-
-SecureFlow records the last time each schedule was processed so it does not run again before its configured interval has passed.
-
-Scheduling can be triggered through either the command-line interface or the graphical dashboard rather than running continuously in the background.
-
-Scheduled file-moving workflows still go through the same security checks, preview, and approval process.
-
-### Dashboard and Monitoring
-
-Version 0.8 introduced a graphical dashboard built using CustomTkinter.
-
-The dashboard provides an alternative to the command-line interface while continuing to use the existing automation and security components.
-
-The interface includes five sections:
-
-- **Overview:** Displays automation activity, pending schedules, and quick workflow actions.
-- **Workflows:** Allows users to select workflows, review proposed actions, and approve or cancel file operations.
-- **Schedules:** Displays configured schedules, due status, and previous processing times.
-- **Activity:** Displays audit logs with search and status filtering.
-- **Settings:** Displays the current workspace and security configuration.
-
-The dashboard uses a monochromatic dark interface and supports macOS trackpad scrolling through Tk 9 touchpad event handling.
-
-File-moving workflows continue to require explicit approval, and the graphical interface does not bypass the existing security checks.
+| Technology | Purpose |
+|------------|---------|
+| Python | Core application and automation |
+| CustomTkinter | Graphical dashboard |
+| Tkinter | GUI components and event handling |
+| SHA-256 | Duplicate file detection |
+| JSON | Configuration and scheduling history |
+| unittest | Automated and integration testing |
+| Git & GitHub | Version control |
 
 ## Getting Started
 
@@ -88,158 +69,38 @@ File-moving workflows continue to require explicit approval, and the graphical i
 - Python 3 with Tkinter support
 - Git
 - CustomTkinter 6.0.0
-- A compatible operating system and Python environment
 
-The core automation and security components use Python's standard library. The graphical dashboard requires CustomTkinter.
-
-External Python dependencies are listed in `requirements.txt`.
-
-The dashboard was developed and tested on macOS using Python 3.14.6, Tk 9.0.3, and CustomTkinter 6.0.0.
+Developed and tested on macOS using Python 3.14.6 and Tk 9.0.3.
 
 ### Installation
-
-Clone the repository:
 
 ```bash
 git clone https://github.com/mahikazi/secure-personal-automation.git
 cd secure-personal-automation
-```
 
-Create a virtual environment:
-
-```bash
 python3 -m venv .venv
-```
-
-Activate it on macOS or Linux:
-
-```bash
 source .venv/bin/activate
-```
 
-Install the required dependencies:
-
-```bash
 ./.venv/bin/python -m pip install -r requirements.txt
 ```
 
-Verify that Tkinter is available:
+### Running SecureFlow
 
-```bash
-./.venv/bin/python -m tkinter
-```
-
-Run the command-line application:
-
-```bash
-./.venv/bin/python main.py
-```
-
-Alternatively, launch the graphical dashboard:
+Launch the graphical dashboard:
 
 ```bash
 ./.venv/bin/python -m dashboard.app
 ```
 
-### Command-Line Menu
+Or use the command-line interface:
 
-When the command-line program starts, it displays:
-
-```text
-Secure Personal Automation Platform
-System initialized successfully.
-
-Available workflows:
-1. Organize files
-2. Archive old files
-3. Detect duplicate files
-4. Run due scheduled workflows
+```bash
+./.venv/bin/python main.py
 ```
-
-Select a workflow by entering its corresponding number.
-
-For file-moving workflows, SecureFlow displays the proposed actions before asking for approval.
-
-### Graphical Dashboard
-
-The dashboard opens with an overview of automation activity and provides sidebar navigation between its five main sections.
-
-Users can select a workflow, generate a preview, review permitted and blocked actions, and approve or cancel execution.
-
-The Activity section allows users to review recorded file-operation outcomes without manually opening the audit log.
-
-The Schedules section displays which workflows are due and allows users to manually process scheduled tasks.
-
-The Settings section provides a read-only view of the current security configuration.
-
-## Security Design
-
-Security checks are separated from the automation logic so workflows cannot directly execute file moves without passing through the permission and execution components.
-
-### Permission Validation
-
-The permission checker in `security/permissions.py` evaluates file operations before they are executed.
-
-It checks that:
-
-- Source and destination paths resolve inside the authorized directory.
-- The source exists and is a regular file.
-- Direct symbolic-link sources are rejected.
-- Symbolic-link destinations are rejected.
-- Existing destination files are not overwritten.
-- The source file extension is permitted.
-- The source file size does not exceed the configured limit.
-
-These checks help prevent unauthorized file operations, path traversal, and accidental overwriting.
-
-### File Execution
-
-File operations are handled by `security/executor.py`.
-
-The executor performs an additional permission check before modifying files.
-
-File moves use hard-link creation followed by deletion of the original source path. This avoids directly overwriting an existing destination.
-
-The executor also handles common filesystem errors, including missing files, permission failures, and unsupported cross-filesystem moves.
-
-These operations are not fully atomic, and some filesystem race conditions remain possible.
-
-### Audit Logging
-
-SecureFlow uses `security/audit_logger.py` to record file-operation outcomes.
-
-Recorded statuses include:
-
-| Status | Meaning |
-|--------|---------|
-| `SUCCESS` | File operation completed |
-| `BLOCKED` | Action failed a security check |
-| `FAILED` | File operation encountered an error |
-| `CANCELLED` | User declined approval |
-
-Audit logging is best-effort. If writing to the log fails, SecureFlow reports a warning without replacing the original file-operation result.
-
-The graphical dashboard reads existing audit records and allows users to search activity and filter records by status.
-
-### Dashboard Security
-
-The graphical dashboard uses the existing permission checker, workflow manager, and secure file executor.
-
-Generating a workflow preview does not immediately modify files.
-
-Permitted actions are held for user approval, while blocked actions are excluded from execution.
-
-The dashboard also checks whether the authorized workspace configuration has changed between preview and execution.
-
-Cancelling a pending workflow prevents its proposed file moves from being executed.
-
-Duplicate detection remains read-only when accessed through the graphical interface.
 
 ## Configuration
 
-### Security Settings
-
-Security settings are stored in `config/settings.json`.
+Security policies are defined in `config/settings.json`.
 
 ```json
 {
@@ -249,15 +110,7 @@ Security settings are stored in `config/settings.json`.
 }
 ```
 
-The configuration controls which directory can be used for file operations, which file extensions are allowed, and the maximum permitted file size.
-
-The configuration loader validates these settings before they are used.
-
-The dashboard displays the current configuration in its Settings section. Configuration changes are made through the JSON file rather than directly through the graphical interface.
-
-### Workflow Schedules
-
-Schedules are stored in `config/schedules.json`.
+Workflow schedules are defined in `config/schedules.json`.
 
 ```json
 {
@@ -267,206 +120,82 @@ Schedules are stored in `config/schedules.json`.
       "workflow": "organize",
       "interval_minutes": 1440,
       "enabled": true
-    },
-    {
-      "name": "weekly_archiver",
-      "workflow": "archive",
-      "interval_minutes": 10080,
-      "days_old": 30,
-      "enabled": true
     }
   ]
 }
 ```
 
-Each schedule includes a unique name, workflow type, interval, and enabled status.
-
-Archive schedules also require a `days_old` value.
-
-The scheduler validates the configuration and rejects invalid intervals, unsupported workflows, duplicate schedule names, and missing archive settings.
-
-### Scheduling History
-
-The scheduler stores previously processed timestamps in:
-
-`logs/schedule_history.json`
-
-When option `4` is selected through the command-line interface, SecureFlow:
-
-1. Loads the configured schedules.
-2. Reads the scheduling history.
-3. Checks which enabled schedules are due.
-4. Processes the due workflows.
-5. Updates the scheduling history.
-
-A workflow is recorded as processed even if its file actions are cancelled or blocked. This prevents immediate retries before the next scheduled interval.
-
-If no schedules are due, the program displays:
-
-```text
-No scheduled workflows are due.
-```
-
-The graphical dashboard uses the scheduling configuration and history to display due workflows and previous processing times.
-
-Users can select due schedules and review their proposed actions through the dashboard.
-
-The scheduling history is local runtime data and is excluded from version control.
+Scheduled workflows are manually triggered and remain subject to permission checks and user approval.
 
 ## Project Structure
 
-The main components are organized as follows:
-
 ```text
 secure-personal-automation/
-├── main.py
+├── config/          # Configuration and security policies
+├── dashboard/       # Graphical interface
+├── scheduler/       # Workflow scheduling and history
+├── security/        # Permissions, execution, approval, and logging
+├── workflows/       # File automation logic
+├── tests/           # Automated and integration tests
+├── test_files/      # Authorized testing workspace
+├── logs/            # Runtime scheduling data
+├── main.py          # Command-line interface
 ├── requirements.txt
-├── config/
-│   ├── config_loader.py
-│   ├── settings.json
-│   └── schedules.json
-├── workflows/
-│   └── workflow_manager.py
-├── security/
-│   ├── permissions.py
-│   ├── executor.py
-│   ├── exceptions.py
-│   ├── preview.py
-│   ├── approval.py
-│   ├── approval_executor.py
-│   └── audit_logger.py
-├── scheduler/
-│   ├── schedule_config.py
-│   ├── schedule_manager.py
-│   ├── schedule_history.py
-│   └── scheduled_runner.py
-├── dashboard/
-│   ├── __init__.py
-│   └── app.py
-├── tests/
-├── test_files/
-└── logs/
+└── README.md
 ```
-
-The automation workflows generate proposed file actions, while the security modules handle permission checks, approval, execution, and logging.
-
-The scheduler connects to the existing workflow manager rather than implementing separate file-moving logic.
-
-The dashboard provides a graphical interface that connects to the existing automation, security, configuration, and scheduling components.
 
 ## Testing
 
-SecureFlow uses Python's built-in `unittest` framework.
-
-Tests cover permission validation, filesystem failures, workflow previews, approval behavior, scheduling configuration, scheduled workflow execution, and dashboard functionality.
-
-Version 0.8 introduced 18 additional automated tests covering dashboard previews, approval and execution, audit log monitoring, and scheduled workflow management.
-
-### Test Coverage
+SecureFlow currently has 73 passing automated tests.
 
 | Test Category | Tests |
 |---------------|------:|
-| Permission security | 8 |
+| Permission validation | 8 |
 | File execution and error handling | 3 |
 | Workflow preview | 3 |
 | User approval | 4 |
 | Approval and execution | 7 |
-| Schedule configuration | 5 |
-| Schedule management | 5 |
-| Scheduled workflow execution | 4 |
-| Dashboard workflow previews | 6 |
-| Dashboard approval and execution | 6 |
-| Dashboard scheduling and monitoring | 6 |
-| **Total** | **57** |
+| Scheduling | 14 |
+| Dashboard functionality | 18 |
+| Security hardening | 6 |
+| Workflow integration | 5 |
+| Runtime integrity | 5 |
+| **Total** | **73** |
 
-Run all tests using:
+Run the test suite:
 
 ```bash
 ./.venv/bin/python -m unittest discover -s tests -v
 ```
 
-**Latest verified result: 57 tests passed.**
-
-The dashboard tests use mocked graphical components and backend operations to test application behavior without opening graphical windows or modifying actual workspace files.
-
-### Manual Testing
-
-The command-line workflows have also been tested manually.
-
-Testing included:
-
-- Approving file moves and verifying successful execution.
-- Cancelling workflows and confirming files were not moved.
-- Blocking actions with existing destination files.
-- Separating permitted and blocked actions in workflow previews.
-- Running scheduled organizer and archiver workflows.
-- Confirming scheduling history prevents immediate repeated runs.
-
-During the v0.7 scheduler test, two workflows were processed. The organizer was cancelled by the user, and the archiver was blocked because its destination already existed.
-
-Running the scheduler again immediately displayed `No scheduled workflows are due.`, confirming that the history was saved and used correctly.
-
-### Dashboard Manual Testing
-
-Eight manual tests were performed during v0.8 development.
-
-| Test | Result |
-|------|--------|
-| Workflow preview and permission validation | Passed |
-| Workflow cancellation and audit logging | Passed |
-| Approved file execution | Passed |
-| Existing destination overwrite prevention | Passed |
-| Read-only duplicate detection | Passed |
-| File extension restrictions | Passed |
-| Scheduled workflow monitoring and execution | Passed |
-| Dashboard navigation and trackpad scrolling | Passed |
-
-During dashboard testing, macOS trackpad scrolling initially failed because standard mouse-wheel event bindings did not handle the touchpad events generated by Tk 9.
-
-The scrolling implementation was updated to handle native touchpad events and their encoded movement values.
-
-Trackpad scrolling was subsequently verified on macOS.
+Manual testing has also been performed to verify dashboard functionality, workflow cancellation, overwrite prevention, symbolic-link protection, file size restrictions, audit log sanitization, and scheduling history integrity.
 
 ## Development Progress
 
-| Version | Development |
-|---------|-------------|
-| v0.1 | Basic file organizer, permission checks, file execution, and audit logging |
-| v0.2 | Initial automated security tests |
-| v0.3 | File archiving, duplicate detection, and workflow management |
+| Version | Milestone |
+|---------|-----------|
+| v0.1 | Core automation and security |
+| v0.2 | Automated security testing |
+| v0.3 | Workflow expansion |
 | v0.4 | Configurable security policies |
-| v0.5 | Improved file execution and error handling |
-| v0.6 | Workflow previews, approval, and cancellation |
-| v0.7 | Configurable scheduling and scheduling history |
-| v0.8 | Graphical dashboard, workflow management, and activity monitoring |
-| v0.9 | Integration testing and security review (planned) |
-| v1.0 | Final release and demonstration (planned) |
+| v0.5 | Safer file execution |
+| v0.6 | Workflow preview and approval |
+| v0.7 | Scheduling and automation |
+| v0.8 | Dashboard and monitoring |
+| v0.9 | Integration testing and security hardening |
+| v1.0 | Final release and demonstration (upcoming) |
 
-## Current Limitations
+## Limitations
 
-SecureFlow is still under development and is not intended to be a fully hardened filesystem security tool.
+SecureFlow is a personal cybersecurity and software development project, not a production-grade filesystem security tool.
 
-Current limitations include:
-
-- File operations are not fully atomic, and partial moves are not automatically rolled back.
-- Repeated permission checks do not eliminate time-of-check-to-time-of-use (TOCTOU) race conditions.
-- Audit logging is best-effort and is not tamper-resistant.
+- File moves are not fully atomic and remain susceptible to filesystem race conditions.
+- Audit logs are not tamper-resistant.
 - Cross-filesystem moves are not supported.
-- Duplicate detection checks only the top level of the selected directory and does not perform byte-for-byte verification after hashing.
-- File-extension checks do not inspect actual file contents.
-- Scheduling requires manual interaction through the command-line interface or graphical dashboard.
-- Scheduled file moves still require interactive approval.
-- Scheduling history tracks processing times rather than detailed success or failure outcomes.
-- The dashboard requires CustomTkinter and a compatible Tkinter installation.
-- Security settings and workflow schedules cannot currently be edited directly through the dashboard.
-- Dashboard compatibility has been manually verified on macOS but has not been fully tested across other operating systems.
+- Duplicate detection is limited to the top level of the workspace.
+- Scheduling requires manual interaction rather than a background service.
+- Dashboard compatibility has primarily been tested on macOS.
 
 ## Next Steps
 
-The next development milestone is **v0.9 — Integration Testing and Security Review**.
-
-The plan is to evaluate how the automation workflows, security components, scheduler, and graphical dashboard interact as a complete system.
-
-This phase will focus on additional integration testing, security edge cases, configuration validation, error handling, and reviewing the remaining limitations of the platform.
-
-The final development milestone, v1.0, will focus on project stabilization, documentation, and preparing SecureFlow for its final demonstration.
+The final development phase will focus on project stabilization, additional regression testing, documentation, and preparing the v1.0 release.
