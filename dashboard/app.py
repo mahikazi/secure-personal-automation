@@ -1,12 +1,16 @@
 import customtkinter as ctk
 import tkinter as tk
-from tkinter import messagebox
+from tkinter import messagebox, filedialog
 from pathlib import Path
 from contextlib import redirect_stdout
 from io import StringIO
 import os
+import subprocess
+import sys
 
-from config.config_loader import load_config
+from config.config_loader import load_config, save_config
+from security.file_importer import import_files
+from workflows.workspace_browser import get_workspace, list_workspace_files, format_file_size
 from workflows.workflow_manager import run_workflow
 from security.permissions import is_action_allowed
 from security.executor import execute_action
@@ -40,7 +44,7 @@ class SecureFlow(ctk.CTk):
         self.sidebar.pack_propagate(False)
         self.label(self.sidebar, 'SecureFlow.', 36).pack(pady=(35, 0))
         ctk.CTkLabel(self.sidebar, text='The art of secure automation.', font=('Baskerville', 15, 'italic'), text_color=GRAY).pack(pady=(0, 35))
-        for i, name in enumerate(['Overview', 'Workflows', 'Schedules', 'Activity', 'Settings'], 1):
+        for i, name in enumerate(['Overview', 'Workspace', 'Workflows', 'Schedules', 'Activity', 'Settings'], 1):
             self.buttons[name] = self.button(self.sidebar, f'{i:02d}   {name}', lambda n=name: self.navigate(n), False)
             self.buttons[name].pack(fill='x', padx=15, pady=4)
         self.label(self.sidebar, 'PERSONAL WORKSPACE', font=MONO, color=GRAY).pack(side='bottom', pady=25)
@@ -175,10 +179,10 @@ class SecureFlow(ctk.CTk):
         return path.read_text(encoding='utf-8', errors='replace').splitlines() if path.exists() else []
 
     def show_overview(self):
-        self.heading('Your workspace.', 'A little order in the everyday.')
+        self.heading('Dashboard.', 'A little order in the everyday.')
         logs = self.logs()
         due = get_due_schedules(load_schedules(), load_history())
-        stats = [('Files moved (logged)', sum(x.split(' | ', 2)[1:2] == ['SUCCESS'] for x in logs)), ('Blocked actions (logged)', sum(x.split(' | ', 2)[1:2] == ['BLOCKED'] for x in logs)), ('Schedules due', len(due))]
+        stats = [('Successful operations (logged)', sum(x.split(' | ', 2)[1:2] == ['SUCCESS'] for x in logs)), ('Blocked actions (logged)', sum(x.split(' | ', 2)[1:2] == ['BLOCKED'] for x in logs)), ('Schedules due', len(due))]
         for name, count in stats:
             card = self.card()
             self.label(card, str(count), 36).pack(side='left', padx=20, pady=12)
@@ -374,14 +378,119 @@ class SecureFlow(ctk.CTk):
         except Exception as error:
             self.write(self.log_box, str(error))
 
+    def show_workspace(self):
+        self.heading('Workspace.', 'A place for everything.')
+        settings = load_config()
+        card = self.card()
+        self.label(card, 'Current workspace', 25).pack(anchor='w', padx=18, pady=(14, 4))
+        path_label = self.label(card, settings['allowed_folder'], font=BODY, color=GRAY)
+        path_label.configure(wraplength=550)
+        path_label.pack(anchor='w', padx=18, pady=(0, 14))
+        self.button(self.content, 'Choose workspace', self.choose_workspace).pack(fill='x', pady=4)
+        self.button(self.content, 'Import files', self.import_workspace_files).pack(fill='x', pady=4)
+        self.button(self.content, 'Open workspace folder', self.open_workspace_folder, False).pack(fill='x', pady=4)
+        self.label(self.content, 'Your files', 28).pack(anchor='w', pady=(22, 4))
+        self.workspace_count = self.label(self.content, '', font=BODY, color=GRAY)
+        self.workspace_count.pack(anchor='w')
+        self.workspace_box = self.textbox(320)
+        self.button(self.content, 'Refresh files', self.refresh_workspace, False).pack(anchor='w', pady=6)
+        self.refresh_workspace()
+
+    def choose_workspace(self):
+        try:
+            selected = filedialog.askdirectory(parent=self, title='Choose authorized workspace', mustexist=True)
+            if not selected:
+                return
+            if not messagebox.askyesno('Change workspace', f'Allow SecureFlow to manage files inside:\n\n{selected}\n\nFile operations will still require approval.', parent=self):
+                return
+            settings = load_config()
+            settings['allowed_folder'] = selected
+            save_config(settings)
+            self.navigate('Workspace')
+        except Exception as error:
+            messagebox.showerror('Workspace selection failed', str(error), parent=self)
+
+    def import_workspace_files(self):
+        try:
+            workspace = get_workspace()
+            selected = filedialog.askopenfilenames(parent=self, title='Select files to import')
+            if not selected:
+                return
+            if not messagebox.askyesno('Import files', f'Copy {len(selected)} selected file(s) into:\n\n{workspace}\n\nOriginal files will remain unchanged.', parent=self):
+                return
+            if get_workspace() != workspace:
+                raise ValueError('Workspace changed. Please select files again.')
+            results = import_files(selected)
+            successful = sum(r['status'] == 'SUCCESS' for r in results)
+            blocked = sum(r['status'] == 'BLOCKED' for r in results)
+            failed = sum(r['status'] == 'FAILED' for r in results)
+            details = '\n'.join(f"{r['filename']}: {r['message']}" for r in results)
+            self.refresh_workspace()
+            messagebox.showinfo('Import results', f'Imported: {successful}\nBlocked: {blocked}\nFailed: {failed}\n\n{details}', parent=self)
+        except Exception as error:
+            messagebox.showerror('Import failed', str(error), parent=self)
+
+    def refresh_workspace(self):
+        try:
+            files = list_workspace_files()
+            total_size = sum(file['size'] for file in files)
+            self.workspace_count.configure(text=f'{len(files)} files · {format_file_size(total_size)}')
+            lines = [f"{file['relative_path']}\n    {file['extension']}  ·  {format_file_size(file['size'])}" for file in files]
+            self.write(self.workspace_box, '\n\n'.join(lines) or 'Your workspace is empty. Import files to begin.')
+        except Exception as error:
+            self.workspace_count.configure(text='Workspace unavailable')
+            self.write(self.workspace_box, str(error))
+
+    def open_workspace_folder(self):
+        try:
+            workspace = str(get_workspace())
+            if sys.platform == 'win32':
+                os.startfile(workspace)
+            elif sys.platform == 'darwin':
+                subprocess.Popen(['open', workspace])
+            elif sys.platform.startswith('linux'):
+                subprocess.Popen(['xdg-open', workspace])
+            else:
+                raise RuntimeError('Opening folders is not supported on this platform.')
+        except Exception as error:
+            messagebox.showerror('Unable to open workspace', str(error), parent=self)
+
     def show_settings(self):
         self.heading('Settings.', 'Boundaries are a form of protection.')
         settings = load_config()
-        for name, value in [('Allowed directory', settings['allowed_folder']), ('Allowed extensions', ', '.join(settings['allowed_extensions'])), ('Maximum file size', f"{settings['max_file_size_mb']} MB"), ('File moves', 'Explicit approval required'), ('Scheduling', 'Manual due-workflow checks'), ('Configuration file', 'config/settings.json')]:
+        card = self.card()
+        self.label(card, 'Allowed directory', 24).pack(anchor='w', padx=18, pady=(12, 0))
+        path_label = self.label(card, settings['allowed_folder'], font=BODY, color=GRAY)
+        path_label.configure(wraplength=550)
+        path_label.pack(anchor='w', padx=18, pady=(4, 12))
+        self.button(card, 'Choose workspace', self.choose_workspace, False).pack(anchor='w', padx=18, pady=(0, 12))
+        self.label(self.content, 'Allowed extensions (comma-separated)', 24).pack(anchor='w', pady=(12, 4))
+        self.extensions_entry = ctk.CTkEntry(self.content, fg_color=PANEL, border_color=LINE, corner_radius=0)
+        self.extensions_entry.insert(0, ', '.join(settings['allowed_extensions']))
+        self.extensions_entry.pack(fill='x', pady=6)
+        self.label(self.content, 'Maximum file size (MB)', 24).pack(anchor='w', pady=(12, 4))
+        self.size_entry = ctk.CTkEntry(self.content, fg_color=PANEL, border_color=LINE, corner_radius=0)
+        self.size_entry.insert(0, str(settings['max_file_size_mb']))
+        self.size_entry.pack(fill='x', pady=6)
+        self.button(self.content, 'Save settings', self.save_settings).pack(anchor='w', pady=12)
+        for name, value in [('File moves', 'Explicit approval required'), ('Scheduling', 'Manual due-workflow checks'), ('Configuration file', 'config/settings.local.json' if Path('config/settings.local.json').exists() else 'config/settings.json')]:
             card = self.card()
             self.label(card, name, 24).pack(anchor='w', padx=18, pady=(12, 0))
             self.label(card, value, font=BODY, color=GRAY).pack(anchor='w', padx=18, pady=(4, 12))
-        self.button(self.content, 'Reload configuration', lambda: self.navigate('Settings')).pack(anchor='w', pady=12)
+        self.button(self.content, 'Reload configuration', lambda: self.navigate('Settings'), False).pack(anchor='w', pady=12)
+
+    def save_settings(self):
+        try:
+            settings = load_config()
+            settings['allowed_extensions'] = [ext.strip() for ext in self.extensions_entry.get().split(',')]
+            settings['max_file_size_mb'] = float(self.size_entry.get())
+            if not messagebox.askyesno('Save security settings', 'Apply these file extension and size restrictions?', parent=self):
+                return
+            save_config(settings)
+            self.navigate('Settings')
+            messagebox.showinfo('Settings', 'Security settings saved.', parent=self)
+        except Exception as error:
+            messagebox.showerror('Unable to save settings', str(error), parent=self)
 
     def close(self):
         if self.pending is not None:

@@ -12,3 +12,6 @@ __pycache__/
 test_files/
 
 /logs/schedule_history.json
+
+config/settings.local.json
+config/.settings_*.tmp
