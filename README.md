@@ -8,7 +8,7 @@ I built SecureFlow to explore how personal automation can be implemented safely 
 **Status:** Complete  
 **Testing:** 134 automated tests passed
 
-![SecureFlow Dashboard](docs/screenshots/overview.png)
+![SecureFlow Dashboard](docs/screenshots/overview.png?v=2)
 
 ## Features
 
