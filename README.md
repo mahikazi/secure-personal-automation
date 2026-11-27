@@ -1,4 +1,4 @@
-# SecureFlow — Secure Personal Automation
+# SecureFlow: Secure Personal Automation
 
 SecureFlow is a Python-based desktop application for automating everyday file management tasks with a focus on cybersecurity, usability, and user control.
 
